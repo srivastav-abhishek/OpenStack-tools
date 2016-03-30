@@ -11,12 +11,13 @@ CONFLICT = 409
 
 
 class NeutronCleaner():
-    def __init__(self, controller_ip=None):
+    def __init__(self, controller_ip="localhost", username="admin", password=None,
+            tenant="admin", port="5000"):
         self.controller_ip = controller_ip
-        self.userName = 'admin'
-        self.password = 'noir0123'
-        self.tenantName = 'admin'
-        self.authPort = '5000'
+        self.userName = username
+        self.password = password
+        self.tenantName = tenant
+        self.authPort = port
         self.protocol = 'http'
         self.session = requests.Session()
         self.token = self._get_token()
@@ -96,7 +97,7 @@ class NeutronCleaner():
 
 
 def main():
-    obj = NeutronCleaner('10.101.1.40')
+    obj = NeutronCleaner('10.101.1.40', 'admin', 'noir0123', 'admin')
     obj.cleanup_resources('ports', 'routers', 'networks')
 
 
