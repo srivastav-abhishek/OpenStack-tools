@@ -11,8 +11,8 @@ CONFLICT = 409
 
 
 class NeutronCleaner():
-    def __init__(self, controller_ip="localhost", username="admin", password=None,
-            tenant="admin", port="5000"):
+    def __init__(self, controller_ip="localhost", username="admin",
+                 password=None, tenant="admin", port="5000"):
         self.controller_ip = controller_ip
         self.userName = username
         self.password = password
@@ -25,6 +25,7 @@ class NeutronCleaner():
                              'Accept': 'application/json',
                              'User-Agent': 'python-neutronclient',
                              'X-Auth-Token': '%s' % self.token}
+        self.tenantId = self._get_tenant_id()
 
     def _get_token(self):
         try:
@@ -52,26 +53,52 @@ class NeutronCleaner():
             print e
             exit()
 
+    def _get_tenant_id(self):
+        url = self.get_url('tenants')
+        resp = self.session.get(url,
+                                headers=self.token_header,
+                                timeout=10.0)
+        resp_body = json.loads(resp.text)
+        print resp_body
+        tenant_id = resp_body['tenants'][0]['id']
+        print tenant_id
+        return tenant_id
+
     def get_url(self, resource):
-        authPort = '9696'
-        return "%s://%s:%s/v2.0/%s.json" % (self.protocol,
-                                            self.controller_ip,
-                                            authPort, resource)
+        if resource in ['ports', 'routers', 'networks']:
+            auth_port = '9696'
+            url_str = "%s://%s:%s/v2.0/%s.json"
+        if resource in ['tenants']:
+            auth_port = '35357'
+            url_str = "%s://%s:%s/v2.0/%s"
+        if resource in ['servers']:
+            auth_port = '8774'
+            return "%s://%s:%s/v2/%s/%s/detail" % (self.protocol,
+                                                   self.controller_ip,
+                                                   auth_port,
+                                                   self.tenantId,
+                                                   resource)
+        return url_str % (self.protocol,
+                          self.controller_ip,
+                          auth_port, resource)
 
     def cleanup_resources(self, *args):
         for arg in args:
             print arg
             url = self.get_url(arg)
+            print url
             try:
                 resp = self.session.get(url,
                                         headers=self.token_header,
                                         timeout=10.0)
                 if resp.status_code == requests.codes.ok:
                     resources = json.loads(resp.text)
+                    print resources
                     i = 0
                     resource_list = []
                     while i != len(resources[arg]):
                         resource_list.append(str(resources[arg][i]["id"]))
+                        print resource_list
                         i += 1
                     print "LEN", len(resource_list)
                     print resource_list
@@ -79,9 +106,12 @@ class NeutronCleaner():
                     print "Unauthorized Access"
                     exit()
                 for resource in resource_list:
-                    print "resource %s %s "%(arg, resource)
-                    durl = url.split('.json')[0]+'/'+resource+".json"
-	            print durl
+                    print "resource %s %s " % (arg, resource)
+                    if arg not in ['servers']:
+                        durl = url.split('.json')[0]+'/'+resource+".json"
+                    else:
+                        durl = url.split('detail')[0]+'/'+resource
+                        print durl
                     resp = self.session.delete(durl,
                                                headers=self.token_header,
                                                timeout=10.0)
@@ -98,7 +128,7 @@ class NeutronCleaner():
 
 def main():
     obj = NeutronCleaner('10.101.1.40', 'admin', 'noir0123', 'admin')
-    obj.cleanup_resources('ports', 'routers', 'networks')
+    obj.cleanup_resources('servers', 'ports', 'routers', 'networks')
 
 
 if __name__ == '__main__':
