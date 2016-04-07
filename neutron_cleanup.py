@@ -8,6 +8,7 @@ ACCEPTED = 202
 UN_AUTH = 401
 DELETED = 204
 CONFLICT = 409
+TIMEOUT = 30
 
 
 class NeutronCleaner():
@@ -32,18 +33,16 @@ class NeutronCleaner():
             url = "%s://%s:%s/v2.0/tokens" % (self.protocol,
                                               self.controller_ip,
                                               self.authPort)
-            print url
             headers = {'Content-Type': 'application/json',
                        'Accept': 'application/json',
                        'User-Agent': 'python-keystoneclient'}
             data = '{"auth": {"tenantName": "%s", '\
                    '"passwordCredentials":{"username": "%s", "password":'\
                    '"%s"}}}' % (self.tenantName, self.userName, self.password)
-            print data
 
             resp = self.session.post(url,
                                      data=data,
-                                     headers=headers, timeout=10.0)
+                                     headers=headers, timeout=TIMEOUT)
             if resp.status_code == requests.codes.ok:
                 token = json.loads(resp.text)["access"]["token"]["id"]
                 return token
@@ -54,15 +53,19 @@ class NeutronCleaner():
             exit()
 
     def _get_tenant_id(self):
-        url = self.get_url('tenants')
-        resp = self.session.get(url,
-                                headers=self.token_header,
-                                timeout=10.0)
-        resp_body = json.loads(resp.text)
-        print resp_body
-        tenant_id = resp_body['tenants'][0]['id']
-        print tenant_id
-        return tenant_id
+        try:
+            url = self.get_url('tenants')
+            resp = self.session.get(url,
+                                    headers=self.token_header,
+                                    timeout=TIMEOUT)
+            resp_body = json.loads(resp.text)
+            tenants = resp_body['tenants']
+            for tenant in tenants:
+                if tenant['name'] == self.tenantName:
+                    tenant_id = tenant['id']
+            return tenant_id
+        except exceptions.Exception as e:
+            print e
 
     def get_url(self, resource):
         if resource in ['ports', 'routers', 'networks']:
@@ -82,39 +85,72 @@ class NeutronCleaner():
                           self.controller_ip,
                           auth_port, resource)
 
+    def get_resource_url(self, url, resource_type, resource):
+        return url.split('.json')[0]+'/'+resource+'.json'
+
+    def get_port_url(self, device_id):
+        return self.get_url('ports') + '?' + 'device_id=%s' % device_id
+
+    def remove_interface_and_gateway(self, url, resource_type, router_id):
+        resource_url = self.get_port_url(router_id)
+        update_url = None
+        try:
+            resp = self.session.get(resource_url,
+                                    headers=self.token_header,
+                                    timeout=TIMEOUT)
+            if resp.status_code == requests.codes.ok:
+                ports_data = json.loads(resp.text)
+                ports = ports_data['ports']
+                for port in ports:
+                    if port['device_owner'] in 'network:router_gateway':
+                        update_url = self.get_resource_url(url,
+                                                           resource_type,
+                                                           router_id)
+                        data = '{"router": {"external_gateway_info": {}}}'
+                    if port['device_owner'] in 'network:router_interface':
+                        subnet_id = port['fixed_ips'][0]['subnet_id']
+                        update_url = self.get_resource_url(url,
+                                                           resource_type,
+                                                           router_id).\
+                            split('.jso')[0] + '/remove_router_interface.json'
+                        data = '{"subnet_id":"%s"}' % subnet_id
+                    if update_url:
+                        resp = self.session.put(update_url,
+                                                data=data,
+                                                headers=self.token_header,
+                                                timeout=TIMEOUT)
+        except exceptions.Exception as e:
+            print e
+            exit()
+
     def cleanup_resources(self, *args):
         for arg in args:
-            print arg
+            print 'Cleaning %s...' % arg
             url = self.get_url(arg)
-            print url
             try:
                 resp = self.session.get(url,
                                         headers=self.token_header,
-                                        timeout=10.0)
+                                        timeout=TIMEOUT)
                 if resp.status_code == requests.codes.ok:
                     resources = json.loads(resp.text)
-                    print resources
                     i = 0
                     resource_list = []
                     while i != len(resources[arg]):
                         resource_list.append(str(resources[arg][i]["id"]))
-                        print resource_list
                         i += 1
-                    print "LEN", len(resource_list)
-                    print resource_list
                 elif resp.status_code == UN_AUTH:
                     print "Unauthorized Access"
                     exit()
                 for resource in resource_list:
-                    print "resource %s %s " % (arg, resource)
                     if arg not in ['servers']:
                         durl = url.split('.json')[0]+'/'+resource+".json"
                     else:
                         durl = url.split('detail')[0]+'/'+resource
-                        print durl
+                    if arg in ['routers']:
+                        self.remove_interface_and_gateway(url, arg, resource)
                     resp = self.session.delete(durl,
                                                headers=self.token_header,
-                                               timeout=10.0)
+                                               timeout=TIMEOUT)
                     if resp.status_code == requests.codes.ok:
                         pass
                     if resp.status_code == UN_AUTH:
@@ -128,7 +164,7 @@ class NeutronCleaner():
 
 def main():
     obj = NeutronCleaner('10.101.1.40', 'admin', 'noir0123', 'admin')
-    obj.cleanup_resources('servers', 'ports', 'routers', 'networks')
+    obj.cleanup_resources('servers', 'routers', 'ports', 'networks')
 
 
 if __name__ == '__main__':
