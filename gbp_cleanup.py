@@ -1,3 +1,5 @@
+from neutron_cleanup import NeutronCleaner
+
 import requests
 import json
 import exceptions
@@ -163,17 +165,6 @@ class Url(GbpCleanUp):
         if self.url_type in ['tokens', 'tenants']:
             return url_str % self.auth_port + self.url_type
 
-        if self.url_type in ['servers']:
-            a = url_str.replace('v2.0', 'v2') % self.servers_port
-            b = self.tenant_id
-            c = '/%s' % self.url_type
-            url_str = a + b + c
-
-            if not self.args:
-                return url_str + '/detail'
-            else:
-                return url_str + '/%s' % self.args
-
         else:
             a = url_str % self.resource_port
             b = 'grouppolicy/%s' % self.url_type
@@ -182,12 +173,15 @@ class Url(GbpCleanUp):
                 url_str += '/%s' % arg
             return url_str + ".json"
 
+NeutronCleaner('10.101.1.40',
+               'admin',
+               'noir0123',
+               'admin').cleanup_resources('servers')
 
 GbpCleanUp('10.101.1.40',
            'admin',
            'noir0123',
-           'admin').clean('servers',
-                          'policy_target_groups',
+           'admin').clean('policy_target_groups',
                           'policy_rule_sets',
                           'policy_rules',
                           'policy_classifiers',
