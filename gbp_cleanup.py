@@ -19,6 +19,7 @@ class GbpCleanUp(object):
     tenant_name = None
     auth_port = None
     resource_port = None
+    servers_port = None
     protocol = None
     session = None
     token = None
@@ -27,13 +28,14 @@ class GbpCleanUp(object):
 
     def __init__(self, controller_ip="localhost", username="admin",
                  password=None, tenant="admin", auth_port="5000",
-                 resource_port="9696"):
+                 resource_port="9696", servers_port='8774'):
         GbpCleanUp.controller_ip = controller_ip
         GbpCleanUp.username = username
         GbpCleanUp.password = password
         GbpCleanUp.tenant_name = tenant
         GbpCleanUp.auth_port = auth_port
         GbpCleanUp.resource_port = resource_port
+        GbpCleanUp.servers_port = servers_port
         GbpCleanUp.protocol = 'http'
         GbpCleanUp.session = requests.Session()
         GbpCleanUp.token = self._get_token()
@@ -161,6 +163,17 @@ class Url(GbpCleanUp):
         if self.url_type in ['tokens', 'tenants']:
             return url_str % self.auth_port + self.url_type
 
+        if self.url_type in ['servers']:
+            a = url_str.replace('v2.0', 'v2') % self.servers_port
+            b = self.tenant_id
+            c = '/%s' % self.url_type
+            url_str = a + b + c
+
+            if not self.args:
+                return url_str + '/detail'
+            else:
+                return url_str + '/%s' % self.args
+
         else:
             a = url_str % self.resource_port
             b = 'grouppolicy/%s' % self.url_type
@@ -170,10 +183,12 @@ class Url(GbpCleanUp):
             return url_str + ".json"
 
 
-GbpCleanUp('10.30.120.52',
+GbpCleanUp('10.101.1.40',
            'admin',
            'noir0123',
-           'admin').clean('policy_rule_sets',
+           'admin').clean('servers',
+                          'policy_target_groups',
+                          'policy_rule_sets',
                           'policy_rules',
                           'policy_classifiers',
                           'policy_actions')
